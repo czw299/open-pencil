@@ -3,6 +3,7 @@ import { watch } from 'vue'
 
 import type { Editor, EditorState } from '@open-pencil/core/editor'
 import { readFigFile } from '@open-pencil/core/io/formats/fig'
+import { pruneUnusedFigImages } from '@open-pencil/fig'
 import { setLocale } from '@open-pencil/vue'
 
 import { readBoundedBody } from '@/app/document/io/browser'
@@ -103,7 +104,7 @@ export function createTodoBridge({ editor, state, changes, buildFigFile }: Bridg
     snapshotting = true
     try {
       const revision = changes.capture()
-      const bytes = await buildFigFile()
+      const bytes = pruneUnusedFigImages(await buildFigFile())
       // Export may await lazy pages/fonts. Never commit a mixed or stale revision.
       if (revision !== changes.capture()) {
         post({ type: 'op-bridge/snapshot-conflict', requestId: requestId })

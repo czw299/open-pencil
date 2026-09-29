@@ -1,6 +1,7 @@
 export {
   compressFigDataSync,
   parseFigBuffer,
+  pruneUnusedFigImages,
   writeFigArchive,
   type FigImageEntry,
   type FigParseResult,

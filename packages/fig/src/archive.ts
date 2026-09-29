@@ -5,6 +5,7 @@ import type { NodeChange } from '@open-pencil/kiwi/fig/codec'
 import { buildFigKiwi, parseFigKiwiChunks } from '@open-pencil/kiwi/fig/container'
 import { decodeFigKiwiCanvas } from '@open-pencil/kiwi/fig/parse'
 
+import { collectImageReferences } from './image-references'
 import { hasPNGSignature } from './thumbnail'
 
 export interface FigImageEntry {
@@ -134,4 +135,31 @@ export function compressFigDataSync(
     images: imageEntries,
     figKiwiVersion
   })
+}
+
+/**
+ * Remove unused image entries from a completed export without mutating editor
+ * state or re-encoding Kiwi. This also covers the original-archive export path.
+ */
+export function pruneUnusedFigImages(bytes: Uint8Array): Uint8Array {
+  // Legacy raw fig-kiwi files have no external ZIP image entries.
+  if (bytes[0] !== 0x50 || bytes[1] !== 0x4b) return bytes
+  const entries = unzipSync(bytes)
+  const imageNames = Object.keys(entries).filter(
+    (name) => name.startsWith('images/') && name !== 'images/'
+  )
+  if (imageNames.length === 0) return bytes
+  const canvas = findCanvasData(entries)
+  if (!canvas) throw new Error('No canvas data found while collecting .fig image references')
+  const { nodeChanges } = decodeFigKiwiCanvas(canvas)
+  const available = new Set(imageNames.map((name) => name.slice('images/'.length)))
+  const referenced = collectImageReferences(nodeChanges, available)
+  const unused = imageNames.filter((name) => !referenced.has(name.slice('images/'.length)))
+  if (unused.length === 0) return bytes
+  const excluded = new Set(unused)
+  const output: Zippable = {}
+  for (const [name, data] of Object.entries(entries)) {
+    if (!excluded.has(name)) output[name] = [data, { level: 0 }]
+  }
+  return zipSync(output)
 }

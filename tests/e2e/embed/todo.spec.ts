@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises'
 
 import { expect, test, type Page } from '@playwright/test'
+import { unzipSync } from 'fflate'
 
 // The production bundle is tested against the same binary HTTP and message contract as Flutter.
 async function connectHost(page: Page) {
@@ -153,5 +154,96 @@ test('host saves binary .fig, preserves edits during upload, and reopens the sav
   } finally {
     await reopened.evaluate((b) => b.dispose())
     await reopened.dispose()
+  }
+})
+
+test('deleting an image prunes saved resources while undo restores them after save', async ({
+  page
+}) => {
+  const document = await readFile('dist/empty.fig')
+  const snapshots = new Map<string, Buffer>()
+  await page.route('**/todo/**', async (route) => {
+    const request = route.request()
+    if (request.headers().authorization !== 'Bearer todo-test-token') {
+      await route.fulfill({ status: 401 })
+      return
+    }
+    const url = new URL(request.url())
+    if (url.pathname === '/todo/document') {
+      await route.fulfill({ status: 200, body: document })
+      return
+    }
+    const id = url.searchParams.get('requestId')
+    const data = request.postDataBuffer()
+    if (!id || !data) throw new Error('Missing snapshot')
+    snapshots.set(id, data)
+    await route.fulfill({ status: 204 })
+  })
+  await page.goto('/?embed=todo')
+  const bridge = await connectHost(page)
+  const imageHash = 'ab'.repeat(20)
+  async function save(id: string) {
+    await bridge.evaluate((b, requestId) => b.send({ type: 'op-bridge/snapshot', requestId }), id)
+    await expect
+      .poll(() => bridge.evaluate((b) => b.last('op-bridge/snapshot-result')?.requestId))
+      .toBe(id)
+    const result = await bridge.evaluate((b) => b.last('op-bridge/snapshot-result'))
+    if (!result) throw new Error('Missing save metadata')
+    await bridge.evaluate(
+      (b, message) =>
+        b.send({
+          type: 'op-bridge/save-committed',
+          generation: message.generation,
+          revision: message.revision
+        }),
+      result
+    )
+    await expect
+      .poll(() => bridge.evaluate((b) => b.last('op-bridge/dirty-changed')?.dirty))
+      .toBe(false)
+    const bytes = snapshots.get(id)
+    if (!bytes) throw new Error('Missing saved bytes')
+    return Object.keys(unzipSync(bytes)).filter((name) => name.startsWith('images/'))
+  }
+  try {
+    await page.evaluate(async (hash) => {
+      const store = window.openPencil?.getStore?.()
+      if (!store) throw new Error('Editor unavailable')
+      const canvas = document.createElement('canvas')
+      canvas.width = canvas.height = 1
+      const blob = await new Promise<Blob | null>((resolve) => {
+        canvas.toBlob(resolve)
+      })
+      if (!blob) throw new Error('PNG generation failed')
+      store.graph.images.set(hash, new Uint8Array(await blob.arrayBuffer()))
+      const id = store.createShape('RECTANGLE', 100, 100, 200, 120)
+      store.graph.updateNode(id, {
+        fills: [
+          {
+            type: 'IMAGE',
+            imageHash: hash,
+            color: { r: 0, g: 0, b: 0, a: 1 },
+            opacity: 1,
+            visible: true
+          }
+        ]
+      })
+      store.select([id])
+      store.requestRender()
+    }, imageHash)
+    expect(await save('image-present')).toEqual(['images/' + imageHash])
+    await page.evaluate(() => window.openPencil?.getStore?.().deleteSelected())
+    expect(await save('image-deleted')).toEqual([])
+    expect(
+      await page.evaluate(
+        (hash) => window.openPencil?.getStore?.().graph.images.has(hash),
+        imageHash
+      )
+    ).toBe(true)
+    await page.keyboard.press('Control+z')
+    expect(await save('image-restored')).toEqual(['images/' + imageHash])
+  } finally {
+    await bridge.evaluate((b) => b.dispose())
+    await bridge.dispose()
   }
 })

@@ -16,3 +16,10 @@ Build: `bun install --frozen-lockfile`, `bun run build:packages`, `bun run build
 then `bun scripts/build-todo-empty.ts`. Ship the whole dist directory, including empty.fig,
 CanvasKit WASM, workers, fonts and assets. The Flutter application handles cloud locks,
 upload retries, window close prompts and release of each loopback server.
+
+Before sending a snapshot, the bridge prunes image entries absent from the final
+serialized canvas payload. It scans all serialized pages and nested fields and
+leaves canvas bytes untouched, including exports reusing an original archive.
+The live image map and undo history are retained, so undo restores image bytes for
+a later save. The Flutter host reports obsolete cloud image paths through deletes;
+the backend owns soft deletion and historical resource retention.
