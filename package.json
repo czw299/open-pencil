@@ -23,7 +23,8 @@
     "tools/package-quality",
     "tools/release-packages",
     "tools/tauri-menu",
-    "tools/visual-oracles"
+    "tools/visual-oracles",
+    "tools/todo-embed"
   ],
   "type": "module",
   "scripts": {

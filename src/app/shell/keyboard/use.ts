@@ -1,10 +1,11 @@
-import { useActiveElement } from '@vueuse/core'
+import { useActiveElement, useEventListener } from '@vueuse/core'
 import { computed } from 'vue'
 
 import { useEditorCommands, useViewportKind } from '@open-pencil/vue'
 
 import { useAIChat } from '@/app/ai/chat/use'
 import { useEditorStore } from '@/app/editor/active-store'
+import { isTodoEmbed } from '@/app/embed/todo/mode'
 import { createKeyboardActions } from '@/app/shell/keyboard/actions'
 import { bindEditorClipboard } from '@/app/shell/keyboard/clipboard'
 import { isInputElement } from '@/app/shell/keyboard/focus'
@@ -28,6 +29,21 @@ export function useKeyboard() {
     runCommand,
     setOpacityTarget
   })
+
+  if (isTodoEmbed)
+    useEventListener(
+      window,
+      'keydown',
+      (event: KeyboardEvent) => {
+        if (!(event.ctrlKey || event.metaKey)) return
+        if (['KeyS', 'KeyO', 'KeyN', 'KeyT', 'KeyW'].includes(event.code)) {
+          event.preventDefault()
+          event.stopImmediatePropagation()
+          if (event.code === 'KeyS') void store.saveFigFile()
+        }
+      },
+      { capture: true }
+    )
 
   bindEditorClipboard(store)
   bindNudgeKeys(store)

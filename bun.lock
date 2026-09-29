@@ -474,6 +474,14 @@
         "@open-pencil/vue": "workspace:*",
       },
     },
+    "tools/todo-embed": {
+      "name": "@open-pencil/todo-embed-tools",
+      "dependencies": {
+        "@open-pencil/core": "workspace:*",
+        "@open-pencil/package-artifacts": "workspace:*",
+        "@open-pencil/scene-graph": "workspace:*",
+      },
+    },
     "tools/visual-oracles": {
       "name": "@open-pencil/visual-oracle-tools",
       "dependencies": {
@@ -1364,6 +1372,8 @@
     "@open-pencil/scene-graph": ["@open-pencil/scene-graph@workspace:packages/scene-graph"],
 
     "@open-pencil/tauri-menu-tools": ["@open-pencil/tauri-menu-tools@workspace:tools/tauri-menu"],
+
+    "@open-pencil/todo-embed-tools": ["@open-pencil/todo-embed-tools@workspace:tools/todo-embed"],
 
     "@open-pencil/visual-oracle-tools": ["@open-pencil/visual-oracle-tools@workspace:tools/visual-oracles"],
 

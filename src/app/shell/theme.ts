@@ -46,6 +46,10 @@ function applyTheme(value: 'dark' | 'light', setting: AppTheme): void {
   updateCanvasTheme()
 }
 
+export function setAppTheme(value: AppTheme): void {
+  theme.value = value
+}
+
 export function useAppTheme() {
   watch([resolvedAppTheme, theme], ([value, setting]) => applyTheme(value, setting), {
     immediate: true

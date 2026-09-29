@@ -5,6 +5,7 @@ import { createRetainedScopePlugin } from '@open-pencil/vue'
 
 import './app.css'
 import { preloadFonts } from '@/app/editor/fonts'
+import { isTodoEmbed } from '@/app/embed/todo/mode'
 import { observeBootErrors } from '@/app/shell/support/boot'
 import { reportBootFailure } from '@/app/shell/support/gate'
 import { IS_TAURI } from '@/constants'
@@ -32,7 +33,7 @@ export async function boot(): Promise<void> {
     return
   }
 
-  if (!IS_TAURI) {
+  if (!IS_TAURI && !isTodoEmbed) {
     void import('virtual:pwa-register').then(({ registerSW }) => {
       registerSW({ immediate: true })
       return undefined

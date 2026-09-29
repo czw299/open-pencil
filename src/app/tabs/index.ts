@@ -20,6 +20,7 @@ import { setActiveEditorStore } from '@/app/editor/active-store'
 import type { EditorPreparationHandle as DocumentLoadSession } from '@/app/editor/preparation/types'
 import { createEditorStore } from '@/app/editor/session'
 import type { EditorStore } from '@/app/editor/session'
+import { isTodoEmbed } from '@/app/embed/todo/mode'
 import { notificationMessages } from '@/app/i18n/notifications'
 import {
   activeStorageProviderID,
@@ -97,6 +98,7 @@ export function getTabsSnapshot(): Tab[] {
 }
 
 export function createTab(store?: EditorStore, initialGraph?: SceneGraph): Tab {
+  if (isTodoEmbed && activeTab.value) return activeTab.value
   const s = store ?? createEditorStore(initialGraph)
   const tab: Tab = { id: generateTabId(), store: s, kind: 'document' }
   tabsRef.value = [...tabsRef.value, tab]
@@ -105,6 +107,7 @@ export function createTab(store?: EditorStore, initialGraph?: SceneGraph): Tab {
 }
 
 export function createHomeTab(): Tab {
+  if (isTodoEmbed) return activeTab.value ?? createTab()
   const tab: Tab = { id: generateTabId(), store: createEditorStore(), kind: 'home' }
   tabsRef.value = [...tabsRef.value, tab]
   activateTab(tab)
@@ -400,6 +403,7 @@ export async function openFileInNewTab(
   handle?: FileSystemFileHandle,
   path?: string
 ): Promise<void> {
+  if (isTodoEmbed) return
   const identity: DocumentSourceIdentity = {
     handle: handle ?? null,
     path: path ?? null

@@ -13,6 +13,8 @@ import { createDocumentSourceState } from '@/app/document/io/source-state'
 import type { DocumentSourceAccess } from '@/app/document/io/types'
 import { createDocumentRecovery } from '@/app/document/recovery'
 import { recoveryEnabled } from '@/app/document/recovery/preferences'
+import { createTodoBridge } from '@/app/embed/todo/bridge'
+import { isTodoEmbed } from '@/app/embed/todo/mode'
 import type { StorageDocumentBinding } from '@/app/integrations/storage/types'
 
 type DocumentSourceState = EditorState & {
@@ -69,9 +71,10 @@ export function createDocumentSourceActions({
 
   const recovery = createDocumentRecovery({
     state,
-    isEnabled: () => recoveryEnabled.value,
+    isEnabled: () => !isTodoEmbed && recoveryEnabled.value,
     buildFigFile: buildRecoveryFigFile,
-    hasWritableSource: () => !!getFileHandle() || !!getFilePath() || !!getStorageBinding()
+    hasWritableSource: () =>
+      !isTodoEmbed && (!!getFileHandle() || !!getFilePath() || !!getStorageBinding())
   })
 
   const { saveFigFile, saveFigFileAs, writeFile } = createSaveActions({
@@ -98,7 +101,8 @@ export function createDocumentSourceActions({
   const autosave = createAutosave({
     state,
     getSavedVersion,
-    hasWritableSource: () => !!getFileHandle() || !!getFilePath() || !!getStorageBinding(),
+    hasWritableSource: () =>
+      !isTodoEmbed && (!!getFileHandle() || !!getFilePath() || !!getStorageBinding()),
     saveCurrentDocument: async (version) => {
       const revision = changes.capture()
       const data = await buildFigFile()
@@ -155,7 +159,10 @@ export function createDocumentSourceActions({
     void startWatchingFile()
   }
 
+  const todo = isTodoEmbed ? createTodoBridge({ editor, state, changes, buildFigFile }) : null
+
   function disposeDocumentIO() {
+    todo?.dispose()
     changes.dispose()
     stopWatchingFile()
     autosave.disposeAutosave()
@@ -168,8 +175,8 @@ export function createDocumentSourceActions({
     setPlannedFilePath,
     startWatchingCurrentFile,
     disposeDocumentIO,
-    saveFigFile: () => saveAndTrack(saveFigFile),
-    saveFigFileAs: () => saveAndTrack(saveFigFileAs),
+    saveFigFile: () => (todo ? todo.requestSave() : saveAndTrack(saveFigFile)),
+    saveFigFileAs: () => (todo ? todo.requestSave() : saveAndTrack(saveFigFileAs)),
     hasUnsavedChanges: changes.hasUnsavedChanges,
     markDocumentSaved: changes.markSaved,
     getStorageBinding,

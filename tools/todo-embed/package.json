@@ -1,0 +1,10 @@
+{
+  "name": "@open-pencil/todo-embed-tools",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@open-pencil/core": "workspace:*",
+    "@open-pencil/package-artifacts": "workspace:*",
+    "@open-pencil/scene-graph": "workspace:*"
+  }
+}

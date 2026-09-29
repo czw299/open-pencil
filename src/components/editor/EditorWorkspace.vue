@@ -5,6 +5,7 @@ import { tv } from 'tailwind-variants'
 import { formatShortcut, useI18n, useViewportKind } from '@open-pencil/vue'
 
 import { useEditorStore } from '@/app/editor/active-store'
+import { isTodoEmbed } from '@/app/embed/todo/mode'
 import { appRuntimeConfig } from '@/app/runtime/config'
 import { loadEditorLayout, saveEditorLayout } from '@/app/shell/layout-storage'
 import { appMenuShortcut } from '@/app/shell/menu/shortcut'
@@ -70,7 +71,7 @@ const horizontalSplitterStyles = tv(splitterTheme)({ direction: 'horizontal' })
       class="flex flex-col"
     >
       <div class="flex shrink-0 items-center justify-between border-b border-border px-1.5 py-1.5">
-        <CollabPanel />
+        <CollabPanel v-if="!isTodoEmbed" />
       </div>
       <PropertiesPanel />
     </SplitterPanel>

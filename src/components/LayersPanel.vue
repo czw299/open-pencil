@@ -5,6 +5,7 @@ import { computed, ref } from 'vue'
 
 import { useI18n } from '@open-pencil/vue'
 
+import { isTodoEmbed } from '@/app/embed/todo/mode'
 import AppMenu from '@/components/shell/AppMenu.vue'
 import SegmentedControl from '@/components/ui/select/SegmentedControl.vue'
 import splitterTheme from '@/theme/splitter'
@@ -35,7 +36,7 @@ const splitterStyles = tv(splitterTheme)({ direction: 'vertical' })
     class="flex min-w-0 flex-1 flex-col overflow-hidden border-r border-border bg-panel"
     style="contain: paint layout style"
   >
-    <AppMenu />
+    <AppMenu v-if="!isTodoEmbed" />
     <div class="shrink-0 border-b border-border px-2 py-1.5">
       <SegmentedControl
         v-model="panelModel"

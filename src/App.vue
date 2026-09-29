@@ -9,6 +9,7 @@ import { provideEditor, useI18n } from '@open-pencil/vue'
 
 import { useDocumentCloseProtection } from '@/app/document/close/use'
 import { useEditorStore } from '@/app/editor/active-store'
+import { isTodoEmbed } from '@/app/embed/todo/mode'
 import { animationsEnabled } from '@/app/shell/motion'
 import { useAppTheme } from '@/app/shell/theme'
 import { toast } from '@/app/shell/ui'
@@ -36,13 +37,14 @@ useHead({
 
 provideEditor(store)
 useAppTheme()
-useDocumentCloseProtection()
+if (!isTodoEmbed) useDocumentCloseProtection()
 useEventListener(window, 'pagehide', () => {
-  void prepareForReload()
+  if (!isTodoEmbed) void prepareForReload()
 })
 
 onMounted(() => {
   toast.setupGlobalErrorHandler()
+  if (isTodoEmbed) return
   scheduleStartupUpdateCheck(updates)
   void kickSyncEngine()
 })
@@ -55,7 +57,7 @@ onMounted(() => {
         <RouterView />
       </AppShell>
       <SettingsDialog />
-      <RecoveryDialog />
+      <RecoveryDialog v-if="!isTodoEmbed" />
       <UnsavedChangesDialog />
       <PublishLibraryDialog />
       <LibraryUpdateReviewDialog />

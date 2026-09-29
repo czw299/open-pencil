@@ -13,6 +13,7 @@ import type { PendingOpenFile } from '@/app/document/io/pending-open'
 import { openPendingFiles } from '@/app/document/io/pending-open'
 import { openWebLinkFromLocation, withoutWebLinkParams } from '@/app/document/io/web-link'
 import { focusNodesByName } from '@/app/editor/selection/focus'
+import { isTodoEmbed } from '@/app/embed/todo/mode'
 import { notificationMessages } from '@/app/i18n/notifications'
 import { appRuntimeConfig } from '@/app/runtime/config'
 import { useKeyboard } from '@/app/shell/keyboard/use'
@@ -42,6 +43,7 @@ const route = useRoute()
 const router = useRouter()
 const createdInitialTab = tabCount() === 0
 const shouldCreateHome =
+  !isTodoEmbed &&
   route.path === '/' &&
   !appRuntimeConfig.test &&
   !route.meta.demo &&
@@ -143,6 +145,7 @@ async function bindAssociatedFileOpen(): Promise<void> {
 let stopWebMCP: (() => void) | undefined
 
 onMounted(async () => {
+  if (isTodoEmbed) return
   stopWebMCP = startWebMCP(getActiveStore)
   await startMCPRuntime(getActiveStore)
 
@@ -175,12 +178,12 @@ onUnmounted(() => {
 
 <template>
   <div data-test-id="editor-root" class="flex h-screen w-screen flex-col">
-    <FileApiBanner />
+    <FileApiBanner v-if="!isTodoEmbed" />
     <ColorSpaceBanner />
     <FontStatusBanner />
     <RenameSelectionDialog />
-    <CommandPalette />
-    <TabBar />
+    <CommandPalette v-if="!isTodoEmbed" />
+    <TabBar v-if="!isTodoEmbed" />
     <HomeWorkspace v-show="activeTab?.kind === 'home'" @new-document="createDocumentInCurrentTab" />
     <EditorWorkspace v-if="activeTab?.kind !== 'home'" />
   </div>

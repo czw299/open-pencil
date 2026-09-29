@@ -10,6 +10,9 @@
 
 ### Added
 
+- Add Todo embedding with host-managed `.fig` persistence, save acknowledgements, and document lifecycle.
+
+
 - Export HTML and Tailwind JSX from the app's export options and through the IO registry, and export Tailwind JSX from the CLI with `-f tailwind-jsx` (`-f jsx --style tailwind` still works). HTML export of a single layer now includes the layer itself, as other formats do.
 - Choose PPTX in the Export panel's format list, alongside PNG, JPG, WEBP, SVG, and PDF.
 
