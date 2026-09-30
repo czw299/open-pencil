@@ -1,3 +1,9 @@
+export {
+  ensureImageResources,
+  registerImageResources,
+  referencedImageResources,
+  imageResourcesReady
+} from './image-resources'
 export { IORegistry } from './registry'
 export { extractExportGraph } from './subgraph'
 export {

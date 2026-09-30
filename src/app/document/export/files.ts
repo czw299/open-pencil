@@ -1,6 +1,7 @@
 import { zipSync, type Zippable } from 'fflate'
 
 import type { Editor, EditorState } from '@open-pencil/core/editor'
+import { ensureImageResources, referencedImageResources } from '@open-pencil/core/io'
 import type {
   ExportRequest,
   IOFormatAdapter,
@@ -107,6 +108,8 @@ export function createExportTargetActions(editor: Editor, state: EditorState, io
     if (!renderer) return null
     const ids = nodeIds.length > 0 ? nodeIds : editor.graph.getChildren(pageId).map((n) => n.id)
     if (ids.length === 0) return null
+    await ensureImageResources(editor.graph, referencedImageResources(editor.graph, ids))
+    renderer.invalidateAllPictures()
     return renderNodesToImage(renderer.ck, renderer, editor.graph, pageId, ids, {
       scale,
       format

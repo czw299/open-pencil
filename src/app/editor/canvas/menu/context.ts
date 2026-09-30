@@ -49,11 +49,11 @@ function copyAction(
         actions.clipboardWrite(editor.copySelectionAsText(actions.ids()), 'text')
       )
     case 'copy-as-svg':
-      return runAsync(() => actions.clipboardWrite(editor.copySelectionAsSVG(actions.ids()), 'SVG'))
+      return runAsync(() => actions.copyAsSource('SVG'))
     case 'copy-as-png':
       return runAsync(actions.copyAsPNG)
     case 'copy-as-jsx':
-      return runAsync(() => actions.clipboardWrite(editor.copySelectionAsJSX(actions.ids()), 'JSX'))
+      return runAsync(() => actions.copyAsSource('JSX'))
     case 'copy-node-id':
       return runAsync(actions.copyNodeId)
     case 'copy-xpath':

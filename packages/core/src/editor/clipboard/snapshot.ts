@@ -1,3 +1,4 @@
+import { collectImageReferences } from '@open-pencil/fig'
 import type { SceneGraph, SceneNode } from '@open-pencil/scene-graph'
 
 import { captureClipboardVariables, type ClipboardVariables } from './variables'
@@ -65,6 +66,13 @@ export function captureClipboardSnapshot(
   const styleDefinitions: SceneNode[] = []
   for (const node of graph.getAllNodes()) {
     if (node.source.id && styleIds.has(node.source.id)) styleDefinitions.push(structuredClone(node))
+  }
+  for (const hash of collectImageReferences(
+    [capturedNodes, styleDefinitions],
+    new Set(graph.images.keys())
+  )) {
+    const bytes = graph.images.get(hash)
+    if (bytes) images.set(hash, bytes.slice())
   }
   return {
     sourceRootId: graph.rootId,

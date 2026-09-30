@@ -20,6 +20,30 @@ upload retries, window close prompts and release of each loopback server.
 Before sending a snapshot, the bridge prunes image entries absent from the final
 serialized canvas payload. It scans all serialized pages and nested fields and
 leaves canvas bytes untouched, including exports reusing an original archive.
-The live image map and undo history are retained, so undo restores image bytes for
+The live image map, external resource mappings and undo history are retained for
 a later save. The Flutter host reports obsolete cloud image paths through deletes;
 the backend owns soft deletion and historical resource retention.
+
+
+### Asynchronous cloud images
+
+Cloud sessions open the existing `todo-fig/1` structure and manifest without downloading
+images. The authenticated `/todo/images/<sha256>` endpoint serves only digests owned
+by this session, using the host's verified disk cache. Vue loads active-page resources
+with four concurrent requests, deduplicates requests, retries failures, and invalidates
+retained rendering pictures when bytes arrive. Resource arrival does not edit the graph.
+
+Todo snapshots retain referenced external manifest entries even when their bytes have
+never loaded; new images remain embedded until the host splits and uploads them. This
+also keeps failed-save recovery self-contained for new resources. Loaded old images
+are omitted from snapshots. The host compares structure plus canonical resource
+manifests for conflicts, pins deleted resources in its cache before reporting `deletes`,
+and re-registers cached images when undo restores a deleted reference. The in-session
+manifest retains old mappings for undo; cache eviction is not implemented.
+
+Standalone FIG exports hydrate resources and bypass the structure-only original-archive
+shortcut. Selection exports, clipboard copy and vectorization await required images.
+While resources are incomplete, cloud snapshots retain the original thumbnail.
+Strict viewport loading and resource-memory eviction remain future work. Local standalone
+files continue to use complete `.fig` bytes. Hosts without this protocol reject cloud
+envelopes instead of silently treating unavailable images as deleted.

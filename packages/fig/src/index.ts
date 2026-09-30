@@ -1,3 +1,4 @@
+export { collectImageReferences } from './image-references'
 export {
   compressFigDataSync,
   parseFigBuffer,

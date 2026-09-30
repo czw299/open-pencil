@@ -2,6 +2,7 @@ import * as v from 'valibot'
 import { watch } from 'vue'
 
 import type { Editor, EditorState } from '@open-pencil/core/editor'
+import { imageResourcesReady } from '@open-pencil/core/io'
 import { readFigFile } from '@open-pencil/core/io/formats/fig'
 import { pruneUnusedFigImages } from '@open-pencil/fig'
 import { setLocale } from '@open-pencil/vue'
@@ -10,6 +11,8 @@ import { readBoundedBody } from '@/app/document/io/browser'
 import type { createDocumentChanges } from '@/app/document/io/changes'
 import { applyImportedDocument } from '@/app/document/io/imported-document'
 import { setAppTheme } from '@/app/shell/theme'
+
+import { createTodoImages, readTodoDocument, writeTodoSnapshot } from './images'
 
 const messageSchema = v.object({
   type: v.string(),
@@ -52,6 +55,8 @@ export function createTodoBridge({ editor, state, changes, buildFigFile }: Bridg
   let opened = false
   let snapshotting = false
   let exportedRevision: number | null = null
+  let source: ReturnType<typeof readTodoDocument> | undefined
+  let images: ReturnType<typeof createTodoImages> | undefined
 
   function post(message: Record<string, unknown>) {
     if (!abort.signal.aborted) window.postMessage(JSON.stringify(message), location.origin)
@@ -82,18 +87,27 @@ export function createTodoBridge({ editor, state, changes, buildFigFile }: Bridg
     try {
       const response = await request('/todo/document')
       const bytes = await readBoundedBody(response, 256 * 1024 * 1024)
-      const graph = await readFigFile(new File([bytes], 'document.fig'), {
+      source = readTodoDocument(bytes)
+      const graph = await readFigFile(new File([new Uint8Array(source.bytes)], 'document.fig'), {
         populate: 'first-page',
         signal: abort.signal
       })
       abort.signal.throwIfAborted()
       await applyImportedDocument(editor, graph)
+      if (source.external)
+        images = createTodoImages(editor, source.manifest, request, abort.signal, (error) => {
+          post({
+            type: 'op-bridge/error',
+            message: error instanceof Error ? error.message : String(error)
+          })
+        })
       state.documentName = 'document'
       changes.markSaved()
       opened = true
       editor.requestRender()
       post({ type: 'op-bridge/opened', generation })
       dirtyChanged()
+      images?.loadPage(state.currentPageId)
     } finally {
       opening = false
     }
@@ -104,7 +118,14 @@ export function createTodoBridge({ editor, state, changes, buildFigFile }: Bridg
     snapshotting = true
     try {
       const revision = changes.capture()
-      const bytes = pruneUnusedFigImages(await buildFigFile())
+      const exported = await buildFigFile()
+      const bytes = source?.external
+        ? writeTodoSnapshot(
+            exported,
+            source.manifest,
+            imageResourcesReady(editor.graph) ? undefined : source.thumbnail
+          )
+        : pruneUnusedFigImages(exported)
       // Export may await lazy pages/fonts. Never commit a mixed or stale revision.
       if (revision !== changes.capture()) {
         post({ type: 'op-bridge/snapshot-conflict', requestId: requestId })
@@ -178,6 +199,10 @@ export function createTodoBridge({ editor, state, changes, buildFigFile }: Bridg
     }
   }
 
+  const stopPage = editor.onEditorEvent('page:changed', (pageId) => images?.loadPage(pageId))
+  const stopHistory = editor.onEditorEvent('history:changed', () =>
+    images?.loadPage(state.currentPageId)
+  )
   const onMessage = (event: MessageEvent) => {
     void receive(event)
   }
@@ -194,6 +219,9 @@ export function createTodoBridge({ editor, state, changes, buildFigFile }: Bridg
     dispose() {
       abort.abort()
       stop()
+      stopPage()
+      stopHistory()
+      images?.dispose()
       window.removeEventListener('message', onMessage)
     }
   }

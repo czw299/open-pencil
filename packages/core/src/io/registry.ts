@@ -1,5 +1,6 @@
 import type { SceneGraph } from '@open-pencil/scene-graph'
 
+import { ensureImageResources, referencedImageResources } from './image-resources'
 import type { ExportRequest, IOContext, IOFormatAdapter, ReadDocumentInput } from './types'
 
 export class IORegistry {
@@ -62,6 +63,7 @@ export class IORegistry {
     if (!adapter?.writeDocument) {
       throw new Error(`Format does not support writeDocument: ${formatId}`)
     }
+    await ensureImageResources(graph)
     return adapter.writeDocument(graph, options, context)
   }
 
@@ -75,6 +77,16 @@ export class IORegistry {
     if (!adapter?.exportContent) {
       throw new Error(`Format does not support exportContent: ${formatId}`)
     }
+    const target = request.target
+    let roots: string[] | undefined
+    if (target.scope === 'page') roots = [target.pageId]
+    if (target.scope === 'node') roots = [target.nodeId]
+    if (target.scope === 'selection') roots = target.nodeIds
+    await ensureImageResources(
+      request.graph,
+      roots ? referencedImageResources(request.graph, roots) : undefined
+    )
+    context?.renderer?.invalidateAllPictures()
     return adapter.exportContent(request, options, context)
   }
 }

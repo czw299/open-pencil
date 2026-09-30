@@ -1,6 +1,7 @@
 import { useClipboard } from '@vueuse/core'
 import type { Ref } from 'vue'
 
+import { ensureImageResources, referencedImageResources } from '@open-pencil/core/io'
 import { nodeToXPath } from '@open-pencil/core/xpath'
 
 import type { EditorStore } from '@/app/editor/active-store'
@@ -65,6 +66,19 @@ export function createCanvasMenuActions(store: EditorStore, selectedIds: Ref<Set
     await clipboardWrite(xpaths.join('\n'), xpaths.length > 1 ? messages.xPaths : messages.xPath)
   }
 
+  async function copyAsSource(format: 'SVG' | 'JSX') {
+    const selected = ids()
+    const roots = selected.length ? selected : [store.state.currentPageId]
+    try {
+      await ensureImageResources(store.graph, referencedImageResources(store.graph, roots))
+      const text =
+        format === 'SVG' ? store.copySelectionAsSVG(selected) : store.copySelectionAsJSX(selected)
+      await clipboardWrite(text, format)
+    } catch {
+      toast.error(notificationMessages.get().clipboardAccessBlocked)
+    }
+  }
+
   async function copyAsPNG() {
     if (typeof ClipboardItem === 'undefined') {
       toast.error(notificationMessages.get().pngClipboardUnavailable)
@@ -85,6 +99,7 @@ export function createCanvasMenuActions(store: EditorStore, selectedIds: Ref<Set
     copyNodeId,
     copyXPath,
     copyAsPNG,
+    copyAsSource,
     canVectorizeImage: () => {
       void selectedIds.value
       return canVectorizeImageNode(store)

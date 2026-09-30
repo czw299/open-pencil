@@ -1,3 +1,4 @@
+import { ensureImageResources } from '@open-pencil/core/io'
 import { preprocessForVectorize, svgToVectorPaths } from '@open-pencil/core/vector'
 import type { Fill, SceneNode } from '@open-pencil/scene-graph'
 
@@ -53,6 +54,7 @@ export async function vectorizeImageNode(store: EditorStore, nodeId: string): Pr
       return
     }
 
+    await ensureImageResources(store.graph, [fill.imageHash])
     const imageBytes = store.graph.images.get(fill.imageHash)
     if (!imageBytes) {
       toast.error(notificationMessages.get().vectorizeImageMissing)

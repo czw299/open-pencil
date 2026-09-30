@@ -1,4 +1,5 @@
 import type { Editor, EditorState } from '@open-pencil/core/editor'
+import { imageResourcesReady } from '@open-pencil/core/io'
 import { exportFigFile } from '@open-pencil/core/io/formats/fig'
 
 import { createAutosave } from '@/app/document/autosave'
@@ -63,6 +64,18 @@ export function createDocumentSourceActions({
   function buildFigFile() {
     const renderer = getRenderer()
     return exportFigFile(editor.graph, renderer?.ck, renderer ?? undefined, state.currentPageId)
+  }
+
+  function buildTodoFigFile() {
+    const renderer = imageResourcesReady(editor.graph) ? getRenderer() : undefined
+    return exportFigFile(
+      editor.graph,
+      renderer?.ck,
+      renderer ?? undefined,
+      state.currentPageId,
+      false,
+      true
+    )
   }
 
   function buildRecoveryFigFile() {
@@ -159,7 +172,9 @@ export function createDocumentSourceActions({
     void startWatchingFile()
   }
 
-  const todo = isTodoEmbed ? createTodoBridge({ editor, state, changes, buildFigFile }) : null
+  const todo = isTodoEmbed
+    ? createTodoBridge({ editor, state, changes, buildFigFile: buildTodoFigFile })
+    : null
 
   function disposeDocumentIO() {
     todo?.dispose()

@@ -21,6 +21,11 @@ import { CANVAS_BG_COLOR, IS_BROWSER, IS_TAURI } from '#core/constants'
 import { applyEnabledLibrariesPluginData } from '#core/io/formats/fig/library-metadata'
 import { findFigThumbnailPageId } from '#core/io/formats/fig/thumbnail-page'
 import { renderThumbnail } from '#core/io/formats/raster'
+import {
+  ensureImageResources,
+  hasExternalImageResources,
+  externalImageHashes
+} from '#core/io/image-resources'
 import { populateAllLazyFigImportRoots } from '#core/kiwi/fig/lazy-import'
 import {
   sceneNodeToKiwi,
@@ -79,9 +84,13 @@ function variableValueToKiwi(
   return { value: { floatValue: Number(value) }, dataType: 'FLOAT', resolvedDataType: 'FLOAT' }
 }
 
-function collectImageEntries(graph: SceneGraph): Array<{ name: string; data: Uint8Array }> {
+function collectImageEntries(
+  graph: SceneGraph,
+  excluded: ReadonlySet<string>
+): Array<{ name: string; data: Uint8Array }> {
   const entries: Array<{ name: string; data: Uint8Array }> = []
   for (const [hash, data] of graph.images) {
+    if (excluded.has(hash)) continue
     entries.push({ name: `images/${hash}`, data })
   }
   return entries
@@ -439,14 +448,27 @@ function appendInternalResources(context: InternalResourceContext): void {
   }
 }
 
+function collectExportImages(graph: SceneGraph, source: SceneGraph, external: boolean) {
+  return collectImageEntries(graph, external ? externalImageHashes(source) : new Set())
+}
+
+async function prepareOriginalArchive(graph: SceneGraph, allowExternalImages: boolean) {
+  if (!allowExternalImages) {
+    await ensureImageResources(graph)
+    if (hasExternalImageResources(graph)) return null
+  }
+  return originalFigArchive(graph)
+}
+
 export async function exportFigFile(
   sourceGraph: SceneGraph,
   ck?: CanvasKit,
   renderer?: SkiaRenderer,
   pageId?: string,
-  renderHeadlessThumbnail = false
+  renderHeadlessThumbnail = false,
+  allowExternalImages = false
 ): Promise<Uint8Array> {
-  const originalArchive = await originalFigArchive(sourceGraph)
+  const originalArchive = await prepareOriginalArchive(sourceGraph, allowExternalImages)
   if (originalArchive) return originalArchive.slice()
   const graph = cloneSceneGraphForFigExport(sourceGraph)
   populateAllLazyFigImportRoots(graph)
@@ -622,7 +644,7 @@ export async function exportFigFile(
     createdAt: new Date().toISOString()
   })
 
-  const imageEntries = collectImageEntries(graph)
+  const imageEntries = collectExportImages(graph, sourceGraph, allowExternalImages)
 
   const version = graph.figKiwiVersion ?? undefined
 

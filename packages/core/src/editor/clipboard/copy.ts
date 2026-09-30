@@ -2,6 +2,7 @@ import { SceneGraph, type SceneNode } from '@open-pencil/scene-graph'
 
 import { buildFigmaClipboardHTML } from '#core/clipboard'
 import type { EditorContext } from '#core/editor/types'
+import { ensureImageResources, referencedImageResources } from '#core/io/image-resources'
 
 import { captureClipboardSnapshot, type ClipboardSnapshot } from './snapshot'
 
@@ -28,6 +29,13 @@ function graphForSnapshot(ctx: EditorContext, snapshot: ClipboardSnapshot): Scen
 export function createClipboardCopyActions(ctx: EditorContext) {
   async function prepareCopy(selectedNodes: SceneNode[]): Promise<ClipboardPayload> {
     if (selectedNodes.length === 0) return { html: '', plainText: '' }
+    await ensureImageResources(
+      ctx.graph,
+      referencedImageResources(
+        ctx.graph,
+        selectedNodes.map((node) => node.id)
+      )
+    )
     const snapshot = captureClipboardSnapshot(ctx.graph, selectedNodes)
     const plainText = snapshot.nodes.map((node) => node.name).join('\n')
     const html = await buildFigmaClipboardHTML(snapshot.nodes, graphForSnapshot(ctx, snapshot))

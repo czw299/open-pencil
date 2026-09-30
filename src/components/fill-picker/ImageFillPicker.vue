@@ -24,13 +24,11 @@ const imageBlob = shallowRef<Blob | null>(null)
 const imagePreviewURL = useObjectUrl(imageBlob)
 
 watch(
-  () => fill.imageHash,
-  (hash) => {
-    if (!hash) {
-      imageBlob.value = null
-      return
-    }
-    const data = store.getImage(hash)
+  () => {
+    void store.state.renderVersion
+    return fill.imageHash ? store.getImage(fill.imageHash) : undefined
+  },
+  (data) => {
     imageBlob.value = data ? new Blob([data]) : null
   },
   { immediate: true }
