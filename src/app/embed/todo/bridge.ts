@@ -91,16 +91,29 @@ export function createTodoBridge({ editor, state, changes, buildFigFile }: Bridg
   async function openDocument() {
     if (opened || opening) return
     opening = true
+    const started = performance.now()
+    const trace = (stage: string) => {
+      const elapsedMs = Math.round(performance.now() - started)
+      console.debug('[Todo load]', { stage, elapsedMs })
+      post({ type: 'op-bridge/load-progress', stage, elapsedMs })
+    }
     try {
+      trace('download-start')
       const response = await request('/todo/document')
       const bytes = await readBoundedBody(response, 256 * 1024 * 1024)
+      trace('download-complete')
       source = readTodoDocument(bytes)
+      trace('parse-start')
       const graph = await readFigFile(new File([new Uint8Array(source.bytes)], 'document.fig'), {
         populate: 'first-page',
         signal: abort.signal
       })
       abort.signal.throwIfAborted()
+      trace('parse-complete')
+      trace('apply-start')
       await applyImportedDocument(editor, graph)
+      abort.signal.throwIfAborted()
+      trace('apply-complete')
       if (source.external)
         images = createTodoImages(editor, source.manifest, request, abort.signal, (error) => {
           post({
