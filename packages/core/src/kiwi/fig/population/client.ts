@@ -22,6 +22,7 @@ interface OriginalArchiveRequest {
   request: () => Promise<Uint8Array>
   valid: boolean
   unbind: () => void
+  cancel?: () => void
 }
 const originalArchiveRequests = new WeakMap<SceneGraph, OriginalArchiveRequest>()
 
@@ -73,9 +74,10 @@ export function canUseFigPopulationWorker(graph: SceneGraph): boolean {
 
 export function registerOriginalArchiveRequest(
   graph: SceneGraph,
-  request: () => Promise<Uint8Array>
+  request: () => Promise<Uint8Array>,
+  cancel?: () => void
 ): void {
-  const entry: OriginalArchiveRequest = { request, valid: true, unbind: () => undefined }
+  const entry: OriginalArchiveRequest = { request, valid: true, unbind: () => undefined, cancel }
   const invalidate = () => {
     if (!graph.isApplyingLayout) entry.valid = false
   }
@@ -102,6 +104,7 @@ export async function requestOriginalArchive(graph: SceneGraph): Promise<Uint8Ar
 export function releaseFigPopulationWorker(graph: SceneGraph): void {
   populationWorkers.get(graph)?.terminate()
   populationWorkers.delete(graph)
+  originalArchiveRequests.get(graph)?.cancel?.()
   originalArchiveRequests.get(graph)?.unbind()
   originalArchiveRequests.delete(graph)
 }
@@ -174,6 +177,7 @@ function createPopulationWorkerClient(
     }
     pending.clear()
     releaseSubscription()
+    originalArchiveRequests.get(graph)?.cancel?.()
     worker.terminate()
     populationWorkers.delete(graph)
   }
@@ -219,13 +223,16 @@ function createPopulationWorkerClient(
     })
   }
   if (port) {
-    port.onmessage = (event: MessageEvent<FigSessionResponse>) =>
-      receive(event.data as WorkerResult)
+    // The FIG reader also listens on this port for original-archive replies.
+    port.addEventListener('message', (event: MessageEvent<FigSessionResponse>) => {
+      if (event.data.type === 'population-result' || event.data.type === 'population-error')
+        receive(event.data)
+    })
     port.start()
   } else {
     worker.onmessage = (event: MessageEvent<WorkerResult>) => receive(event.data)
   }
-  worker.onerror = () => fail()
+  worker.addEventListener('error', () => fail())
   return {
     populate(pageId, signal) {
       signal?.throwIfAborted()

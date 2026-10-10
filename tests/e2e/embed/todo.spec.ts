@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page, type Route } from '@playwright/test'
 import { unzipSync, zipSync } from 'fflate'
 
 // The production bundle is tested against the same binary HTTP and message contract as Flutter.
@@ -76,6 +76,12 @@ test('host saves binary .fig, preserves edits during upload, and reopens the sav
   const bridge = await connectHost(page)
   try {
     await expect(page.getByTestId('app-logo')).toHaveCount(0)
+    // Regression: saving an unchanged import must receive the archive worker reply.
+    await bridge.evaluate((b) => b.send({ type: 'op-bridge/snapshot', requestId: 'unchanged' }))
+    await expect
+      .poll(() => bridge.evaluate((b) => b.last('op-bridge/snapshot-result')?.requestId))
+      .toBe('unchanged')
+    expect(snapshots.get('unchanged')?.subarray(0, 2).toString()).toBe('PK')
     await addShape(page, 'Saved rectangle', 100)
     await expect
       .poll(() => bridge.evaluate((b) => b.last('op-bridge/dirty-changed')?.dirty))
@@ -150,6 +156,12 @@ test('host saves binary .fig, preserves edits during upload, and reopens the sav
     await expect
       .poll(() => reopened.evaluate((b) => b.last('op-bridge/dirty-changed')?.dirty))
       .toBe(false)
+    await reopened.evaluate((b) =>
+      b.send({ type: 'op-bridge/snapshot', requestId: 'reopened-unchanged' })
+    )
+    await expect
+      .poll(() => reopened.evaluate((b) => b.last('op-bridge/snapshot-result')?.requestId))
+      .toBe('reopened-unchanged')
     await page.keyboard.press('Control+t')
     await expect(page.getByTestId('layers-panel')).toBeVisible()
   } finally {
@@ -397,6 +409,51 @@ test('cloud document opens and saves before images finish, then loads only the a
     expect(requested).toHaveLength(2)
   } finally {
     releaseImages?.()
+    await bridge.dispose()
+  }
+})
+
+test('failed and cancelled snapshot uploads preserve edits and permit retry', async ({ page }) => {
+  const document = await readFile('dist/empty.fig')
+  let held: Route | undefined
+  await page.route('**/todo/**', async (route) => {
+    const url = new URL(route.request().url())
+    if (url.pathname === '/todo/document') return route.fulfill({ status: 200, body: document })
+    const id = url.searchParams.get('requestId')
+    if (id === 'failed') return route.fulfill({ status: 500 })
+    if (id === 'cancelled') {
+      held = route
+      return
+    }
+    return route.fulfill({ status: 204 })
+  })
+  await page.goto('/?embed=todo')
+  const bridge = await connectHost(page)
+  try {
+    await addShape(page, 'Keep edits', 100)
+    await bridge.evaluate((b) => b.send({ type: 'op-bridge/snapshot', requestId: 'failed' }))
+    await expect
+      .poll(() => bridge.evaluate((b) => b.last('op-bridge/snapshot-error')?.requestId))
+      .toBe('failed')
+    expect(await bridge.evaluate((b) => b.last('op-bridge/snapshot-error')?.message)).toContain(
+      '500'
+    )
+    await bridge.evaluate((b) => b.send({ type: 'op-bridge/snapshot', requestId: 'cancelled' }))
+    await expect.poll(() => !!held).toBe(true)
+    await bridge.evaluate((b) =>
+      b.send({ type: 'op-bridge/snapshot-cancel', requestId: 'cancelled' })
+    )
+    await expect
+      .poll(() => bridge.evaluate((b) => b.last('op-bridge/snapshot-error')?.requestId))
+      .toBe('cancelled')
+    await held?.fulfill({ status: 204 })
+    await bridge.evaluate((b) => b.send({ type: 'op-bridge/snapshot', requestId: 'retry' }))
+    await expect
+      .poll(() => bridge.evaluate((b) => b.last('op-bridge/snapshot-result')?.requestId))
+      .toBe('retry')
+    expect(await bridge.evaluate((b) => b.last('op-bridge/dirty-changed')?.dirty)).toBe(true)
+  } finally {
+    await bridge.evaluate((b) => b.dispose())
     await bridge.dispose()
   }
 })

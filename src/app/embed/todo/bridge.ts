@@ -13,6 +13,7 @@ import { applyImportedDocument } from '@/app/document/io/imported-document'
 import { setAppTheme } from '@/app/shell/theme'
 
 import { createTodoImages, readTodoDocument, writeTodoSnapshot } from './images'
+import { createSnapshotOperation } from './snapshot-operation'
 
 const messageSchema = v.object({
   type: v.string(),
@@ -53,7 +54,9 @@ export function createTodoBridge({ editor, state, changes, buildFigFile }: Bridg
   let initializing = false
   let opening = false
   let opened = false
-  let snapshotting = false
+  let activeSnapshot:
+    | { requestId: string; operation: ReturnType<typeof createSnapshotOperation> }
+    | undefined
   let exportedRevision: number | null = null
   let source: ReturnType<typeof readTodoDocument> | undefined
   let images: ReturnType<typeof createTodoImages> | undefined
@@ -76,7 +79,11 @@ export function createTodoBridge({ editor, state, changes, buildFigFile }: Bridg
     if (!token) throw new Error('Todo bridge is not initialized')
     const headers = new Headers(options.headers)
     headers.set('Authorization', `Bearer ${token}`)
-    const response = await fetch(path, { ...options, signal: abort.signal, headers })
+    const response = await fetch(path, {
+      ...options,
+      signal: options.signal ?? abort.signal,
+      headers
+    })
     if (!response.ok) throw new Error(`Todo document request failed (${response.status})`)
     return response
   }
@@ -114,31 +121,52 @@ export function createTodoBridge({ editor, state, changes, buildFigFile }: Bridg
   }
 
   async function snapshot(requestId: string | undefined) {
-    if (!opened || snapshotting || !requestId) throw new Error('Editor is not ready for a snapshot')
-    snapshotting = true
+    if (!opened || activeSnapshot || !requestId)
+      throw new Error('Editor is not ready for a snapshot')
+    const operation = createSnapshotOperation()
+    activeSnapshot = { requestId, operation }
+    const started = performance.now()
+    const trace = (stage: string, bytes?: number) => {
+      const elapsedMs = Math.round(performance.now() - started)
+      console.debug('[Todo save]', { requestId, stage, elapsedMs, bytes })
+      post({ type: 'op-bridge/snapshot-progress', requestId, stage, elapsedMs, bytes })
+    }
     try {
-      const revision = changes.capture()
-      const exported = await buildFigFile()
-      const bytes = source?.external
-        ? writeTodoSnapshot(
-            exported,
-            source.manifest,
-            imageResourcesReady(editor.graph) ? undefined : source.thumbnail
-          )
-        : pruneUnusedFigImages(exported)
-      // Export may await lazy pages/fonts. Never commit a mixed or stale revision.
-      if (revision !== changes.capture()) {
-        post({ type: 'op-bridge/snapshot-conflict', requestId: requestId })
-        return
-      }
-      await request(`/todo/snapshot?requestId=${encodeURIComponent(requestId)}`, {
-        method: 'PUT',
-        body: new Uint8Array(bytes)
+      await operation.run(async () => {
+        const revision = changes.capture()
+        trace('export-start')
+        const exported = await buildFigFile()
+        operation.signal.throwIfAborted()
+        trace('export-complete', exported.byteLength)
+        const bytes = source?.external
+          ? writeTodoSnapshot(
+              exported,
+              source.manifest,
+              imageResourcesReady(editor.graph) ? undefined : source.thumbnail
+            )
+          : pruneUnusedFigImages(exported)
+        // Export may await lazy pages/fonts. Never commit a mixed or stale revision.
+        if (revision !== changes.capture()) {
+          post({ type: 'op-bridge/snapshot-conflict', requestId: requestId })
+          return
+        }
+        trace('upload-start', bytes.byteLength)
+        await request(`/todo/snapshot?requestId=${encodeURIComponent(requestId)}`, {
+          method: 'PUT',
+          body: new Uint8Array(bytes),
+          signal: operation.signal
+        })
+        operation.signal.throwIfAborted()
+        trace('upload-complete', bytes.byteLength)
+        exportedRevision = revision
+        post({ type: 'op-bridge/snapshot-result', requestId, generation, revision })
       })
-      exportedRevision = revision
-      post({ type: 'op-bridge/snapshot-result', requestId: requestId, generation, revision })
+    } catch (error) {
+      trace('failed')
+      throw error
     } finally {
-      snapshotting = false
+      operation.dispose()
+      activeSnapshot = undefined
     }
   }
 
@@ -156,6 +184,10 @@ export function createTodoBridge({ editor, state, changes, buildFigFile }: Bridg
     } finally {
       initializing = false
     }
+  }
+
+  function cancelSnapshot(requestId: string | undefined) {
+    if (activeSnapshot && activeSnapshot.requestId === requestId) activeSnapshot.operation.cancel()
   }
 
   async function receive(event: MessageEvent) {
@@ -177,6 +209,9 @@ export function createTodoBridge({ editor, state, changes, buildFigFile }: Bridg
         case 'op-bridge/open-document':
           await openDocument()
           break
+        case 'op-bridge/snapshot-cancel':
+          cancelSnapshot(message.requestId)
+          break
         case 'op-bridge/snapshot':
           await snapshot(message.requestId)
           break
@@ -190,10 +225,10 @@ export function createTodoBridge({ editor, state, changes, buildFigFile }: Bridg
       }
     } catch (error) {
       if (abort.signal.aborted) return
-      if (message.type === 'op-bridge/snapshot')
-        post({ type: 'op-bridge/snapshot-conflict', requestId: message.requestId })
       post({
-        type: 'op-bridge/error',
+        type:
+          message.type === 'op-bridge/snapshot' ? 'op-bridge/snapshot-error' : 'op-bridge/error',
+        requestId: message.requestId,
         message: error instanceof Error ? error.message : String(error)
       })
     }
@@ -217,6 +252,7 @@ export function createTodoBridge({ editor, state, changes, buildFigFile }: Bridg
       return false
     },
     dispose() {
+      activeSnapshot?.operation.cancel()
       abort.abort()
       stop()
       stopPage()

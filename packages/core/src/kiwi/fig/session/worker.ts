@@ -60,6 +60,14 @@ function handleRequest(request: FigSessionRequest): void {
     if (request.type === 'cancel') return
     populate(request)
   } catch (error) {
+    if (request.type === 'original-archive') {
+      respond({
+        type: 'original-archive-error',
+        requestId: request.requestId,
+        error: error instanceof Error ? error.message : String(error)
+      })
+      return
+    }
     respond({
       type: 'population-error',
       requestId: request.type === 'populate' ? request.requestId : undefined,

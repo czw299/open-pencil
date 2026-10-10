@@ -9,9 +9,9 @@ import {
   registerFigPopulationWorker,
   registerOriginalArchiveRequest
 } from '#core/kiwi/fig/population/client'
+import { createArchiveRequests } from '#core/kiwi/fig/session/archive-requests'
 import { createFigSessionWorker } from '#core/kiwi/fig/session/client'
 import type { FigSessionOpenRequest, FigSessionResponse } from '#core/kiwi/fig/session/protocol'
-import { randomHex } from '#core/random'
 
 export interface ParseFigFileOptions {
   populate?: 'all' | 'first-page' | 'none'
@@ -38,8 +38,9 @@ function parseViaWorker(buffer: ArrayBuffer, options: ParseFigFileOptions): Prom
     options.signal?.throwIfAborted()
     const worker = createFigSessionWorker()
     const channel = new MessageChannel()
-    const pendingArchives = new Map<string, (bytes: Uint8Array) => void>()
+    const archives = createArchiveRequests(channel.port1)
     const abort = () => {
+      archives.dispose()
       channel.port1.postMessage({ type: 'dispose' })
       channel.port1.close()
       worker.terminate()
@@ -49,13 +50,6 @@ function parseViaWorker(buffer: ArrayBuffer, options: ParseFigFileOptions): Prom
     const cleanupAbort = () => options.signal?.removeEventListener('abort', abort)
 
     channel.port1.onmessage = (e: MessageEvent<FigSessionResponse>) => {
-      if (e.data.type === 'original-archive-result') {
-        const resolveArchive = pendingArchives.get(e.data.requestId)
-        if (!resolveArchive) return
-        pendingArchives.delete(e.data.requestId)
-        resolveArchive(e.data.bytes)
-        return
-      }
       if (e.data.type === 'page-manifest') {
         options.onPages?.(e.data.pages)
         return
@@ -63,6 +57,7 @@ function parseViaWorker(buffer: ArrayBuffer, options: ParseFigFileOptions): Prom
       if (e.data.type !== 'graph') return
       if (e.data.error || !e.data.graph) {
         cleanupAbort()
+        archives.dispose()
         channel.port1.close()
         worker.terminate()
         reject(new Error(e.data.error ?? 'Worker failed to parse .fig file'))
@@ -75,33 +70,35 @@ function parseViaWorker(buffer: ArrayBuffer, options: ParseFigFileOptions): Prom
           registerFigPopulationWorker(graph, worker, channel.port1)
           registerOriginalArchiveRequest(
             graph,
-            () =>
-              new Promise<Uint8Array>((resolveArchive) => {
-                const requestId = randomHex()
-                pendingArchives.set(requestId, resolveArchive)
-                channel.port1.postMessage({ type: 'original-archive', requestId })
-              })
+            () => archives.request(),
+            () => archives.dispose()
           )
         } else {
           cleanupAbort()
+          archives.dispose()
           channel.port1.close()
           worker.terminate()
         }
         resolve(graph)
       } catch (error) {
         cleanupAbort()
+        archives.dispose()
         channel.port1.close()
         worker.terminate()
         reject(error instanceof Error ? error : new Error(String(error)))
       }
     }
     channel.port1.start()
-    worker.onerror = (err) => {
+    worker.addEventListener('error', (err) => {
       cleanupAbort()
+      archives.dispose(new Error(err.message || 'FIG worker failed'))
       channel.port1.close()
       worker.terminate()
       reject(new Error(err.message || 'Worker failed to parse .fig file'))
-    }
+    })
+    channel.port1.addEventListener('messageerror', () =>
+      archives.dispose(new Error('Invalid FIG worker response'))
+    )
     const workerBuffer = buffer.slice(0)
     const archiveBuffer = buffer.slice(0)
     const request: FigSessionOpenRequest = {

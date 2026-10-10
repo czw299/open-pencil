@@ -51,4 +51,5 @@ export type FigSessionResponse =
     }
   | { type: 'population-error'; requestId?: string; error: string }
   | { type: 'original-archive-result'; requestId: string; bytes: Uint8Array }
+  | { type: 'original-archive-error'; requestId: string; error: string }
   | { type: 'disposed' }

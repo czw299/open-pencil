@@ -671,6 +671,8 @@ function canUseWorker(): boolean {
   return typeof Worker !== 'undefined' && IS_BROWSER
 }
 
+const FIG_COMPRESSION_TIMEOUT_MS = 60_000
+
 function compressViaWorker(
   schemaDeflated: Uint8Array,
   kiwiData: Uint8Array,
@@ -684,27 +686,44 @@ function compressViaWorker(
       type: 'module'
     })
 
-    worker.onmessage = (e: MessageEvent<Uint8Array>) => {
-      resolve(e.data)
+    const finish = () => {
+      clearTimeout(timeout)
       worker.terminate()
     }
+    const timeout = setTimeout(() => {
+      finish()
+      reject(new Error('FIG compression timed out'))
+    }, FIG_COMPRESSION_TIMEOUT_MS)
+    worker.onmessage = (e: MessageEvent<Uint8Array>) => {
+      finish()
+      resolve(e.data)
+    }
     worker.onerror = (err) => {
+      finish()
       reject(new Error(err.message))
-      worker.terminate()
+    }
+    worker.onmessageerror = () => {
+      finish()
+      reject(new Error('Invalid FIG compression response'))
     }
 
     // Do NOT use transferables here. toUint8Array() in ByteBuffer returns a view of the
     // internal buffer, so transferring kiwiData.buffer or schemaDeflated.buffer detaches
     // buffers that may be shared with other views, causing "already detached" errors on
     // subsequent saves. Structured clone (the default) copies the data safely.
-    worker.postMessage({
-      schemaDeflated,
-      kiwiData,
-      thumbnailPNG,
-      metaJSON,
-      images: imageEntries,
-      figKiwiVersion
-    })
+    try {
+      worker.postMessage({
+        schemaDeflated,
+        kiwiData,
+        thumbnailPNG,
+        metaJSON,
+        images: imageEntries,
+        figKiwiVersion
+      })
+    } catch (error) {
+      finish()
+      reject(error instanceof Error ? error : new Error(String(error)))
+    }
   })
 }
 
